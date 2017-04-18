@@ -119,6 +119,11 @@ def agent_without_checks(request):
         with open(config_file_location, "w") as fh:
             fh.write(config_file.config_as_string())
 
+    if "agent_exec_prefix" in request.module.__dict__:
+        exec_prefix = request.module.agent_exec_prefix()
+    else:
+        exec_prefix = None
+
     # Introspect the consuming module for what service manifests to use.
     # TODO: Perhaps this should be optionally on the class-level as well?
     standard_manifest_location = None
@@ -147,7 +152,8 @@ def agent_without_checks(request):
                                                   config_file_location,
                                                   standard_manifest_location,
                                                   default_manifest_location,
-                                                  auto_check_connection)
+                                                  auto_check_connection,
+                                                  exec_prefix)
     # Give it some time to start
     time.sleep(1)
 
@@ -172,7 +178,7 @@ def testhelper(request):
 
 def grep_for_dbus_proxy():
     """ Helper for 'assert_no_proxy' """
-    return os.system('ps -aux | grep dbus-proxy | grep -v "grep" | grep prefix-dbus- > /dev/null')
+    return os.popen('ps -aux | grep dbus-proxy | grep -v "grep"').read()
 
 
 @pytest.fixture(scope="function")
@@ -181,9 +187,9 @@ def assert_no_proxy():
 
         Do the check both on setup and teardown
     """
-    assert grep_for_dbus_proxy() != 0, "dbus-proxy is alive when it shouldn't be"
+    assert "dbus-proxy" not in grep_for_dbus_proxy(), "dbus-proxy is alive when it shouldn't be"
     yield
-    assert grep_for_dbus_proxy() != 0, "dbus-proxy is alive when it shouldn't be"
+    assert "dbus-proxy" not in grep_for_dbus_proxy(), "dbus-proxy is alive when it shouldn't be"
 
 
 @pytest.fixture(scope="module")

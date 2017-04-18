@@ -23,6 +23,7 @@
 
 namespace softwarecontainer {
 
+
 ContainerOptionParser::ContainerOptionParser() :
     m_options(new DynamicContainerOptions())
 {
@@ -36,14 +37,37 @@ void ContainerOptionParser::readConfigElement(const json_t *element)
         throw ContainerOptionParseError(errorMessage);
     }
 
-    bool wo = false;
-    if(!JSONParser::read(element, "enableWriteBuffer", wo)) {
-        std::string errorMessage("Could not parse config due to: 'enableWriteBuffer' not found.");
+    bool writeBufferEnabled = false;
+    if(!JSONParser::read(element, "writeBufferEnabled", writeBufferEnabled)) {
+        std::string errorMessage("Could not parse config due to: 'writeBufferEnabled' not found.");
         log_error() << errorMessage;
         throw ContainerOptionParseError(errorMessage);
     }
 
-    m_options->setEnableWriteBuffer(wo);
+    m_options->setWriteBufferEnabled(writeBufferEnabled);
+
+    if (writeBufferEnabled == true) {
+        bool enableTemporaryFilesystemWriteBuffer = false;
+        if(!JSONParser::read(element,
+                             "temporaryFileSystemWriteBufferEnabled",
+                             enableTemporaryFilesystemWriteBuffer))
+        {
+            log_warn() << "Could not parse config due to: 'enableTemporaryFilesystemWriteBuffer' not found.";
+        }
+        m_options->setTemporaryFileSystemWriteBufferEnabled(enableTemporaryFilesystemWriteBuffer);
+
+        if (enableTemporaryFilesystemWriteBuffer) {
+            int temporaryFileSystemSize = DEFAULT_TEMPORARY_FILESYSTEM_SIZE;
+            if(!JSONParser::read(element,
+                                 "temporaryFileSystemSize",
+                                 temporaryFileSystemSize))
+            {
+                log_error() << "Could not parse config due to: 'temporaryFileSystemSize' not found.";
+            }
+            m_options->setTemporaryFileSystemSize(temporaryFileSystemSize);
+        }
+    }
+
 }
 
 std::unique_ptr<DynamicContainerOptions> ContainerOptionParser::parse(const std::string &config)

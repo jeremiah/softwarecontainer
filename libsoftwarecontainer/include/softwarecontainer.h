@@ -333,7 +333,7 @@ private:
     void assertValidState();
 
     // Check if the workspace is sound, and set it up if it isn't
-    void checkWorkspace();
+    void checkContainerRoot(std::string rootDir);
 #ifdef ENABLE_NETWORKGATEWAY
     void checkNetworkSettings();
 #endif // ENABLE_NETWORKGATEWAY
@@ -345,6 +345,9 @@ private:
 
     std::vector<std::unique_ptr<Gateway>> m_gateways;
     std::unique_ptr<const SoftwareContainerConfig> m_config;
+
+    std::string m_containerRoot;
+    unsigned int m_tmpfsSize;
 
     Glib::RefPtr<Glib::MainContext> m_mainLoopContext;
     SignalConnectionsHandler m_connections;

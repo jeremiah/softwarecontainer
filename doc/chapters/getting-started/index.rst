@@ -58,12 +58,20 @@ When creating containers, a configuration is passed as a JSON string. The string
 objects, in the JSON sense.
 The currently supported configs are:
 
-  * Disk writing buffer - on or off. Key: "enableWriteBuffer", value: ``true`` for on or ``false`` for off.
+  * Disk writing buffer - on or off. Key: "writeBufferEnabled", value: ``true``
+    for on or ``false`` for off.
+  * Temporary FileSystem buffers - on or off. Key:
+    "temporaryFileSystemWriteBufferEnabled", value ``true`` for on or ``false``
+    for off.
+  * Temporary FileSystem Size - integer. Key: "temporaryFileSystemSize", value:
+    Integer Size in bytes of the Temporary FileSystem Size.
 
 Example config JSON::
 
     [{
-        "enableWriteBuffer": true
+        "writeBufferEnabled": true,
+        "temporaryFileSystemWriteBufferEnabled": true,
+        "temporaryFileSystemSize": 10485760
     }]
 
 The main reason this config is passed as raw JSON is to support additions in supported config
@@ -72,11 +80,23 @@ options without breaking the API.
 Write buffer configuration
 --------------------------
 
-The ``enableWriteBuffer`` is used to enable or disable write buffers on the mounted
+The ``writeBufferEnabled`` is used to enable or disable write buffers on the mounted
 :ref:`filesystems <filesystems>` in the container. These
 buffers consists of a RAM overlay on top of the existing :ref:`filesystem <filesystems>`, and are
 synced to the underlying :ref:`filesystem <filesystems>` on
 shutdown of the container.
+
+The ``temporaryFileSystemWriteBufferEnabled`` is used to enable or disable the
+``tmpfs`` being mounted on top of the containers temporary filesystem
+containing temporary files. This can be used to separate the containers from
+accidentally overcommitting and thereby denying service to any other containers
+currently running.
+
+The ``temporaryFileSystemSize`` is used to set the ``RAM size`` of the
+``tmpfs`` being mounted on top of the containers temporary filesystem location.
+The variable is set in ``bytes``. This will be shared between all the
+``upper`` and ``work`` directories being mounted using ``overlayfs`` into a
+specific container.
 
 
 Working with containers

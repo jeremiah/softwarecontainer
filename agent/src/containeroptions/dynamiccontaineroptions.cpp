@@ -26,18 +26,38 @@ std::unique_ptr<SoftwareContainerConfig> DynamicContainerOptions::toConfig(const
     std::unique_ptr<SoftwareContainerConfig> dynamicConf = 
         std::unique_ptr<SoftwareContainerConfig>(new SoftwareContainerConfig(conf));
 
-    dynamicConf->setEnableWriteBuffer(enableWriteBuffer());
+    dynamicConf->setEnableWriteBuffer(writeBufferEnabled());
     return dynamicConf;
 }
 
-void DynamicContainerOptions::setEnableWriteBuffer(bool enabled)
+void DynamicContainerOptions::setWriteBufferEnabled(bool enabled)
 {
-    m_enableWriteBuffer = enabled;
+    m_writeBufferEnabled = enabled;
 }
 
-bool DynamicContainerOptions::enableWriteBuffer() const
+bool DynamicContainerOptions::writeBufferEnabled() const
 {
-    return m_enableWriteBuffer;
+    return m_writeBufferEnabled;
+}
+
+void DynamicContainerOptions::setTemporaryFileSystemWriteBufferEnabled(bool enabled)
+{
+    m_temporaryFileSystemWriteBufferEnabled = enabled;
+}
+
+bool DynamicContainerOptions::temporaryFileSystemWriteBufferEnabled() const
+{
+    return m_temporaryFileSystemWriteBufferEnabled;
+}
+
+void DynamicContainerOptions::setTemporaryFileSystemSize(unsigned int size)
+{
+    m_temporaryFileSystemSize = size;
+}
+
+unsigned int DynamicContainerOptions::temporaryFileSystemSize() const
+{
+    return m_temporaryFileSystemSize;
 }
 
 } // namespace softwarecontainer

@@ -105,7 +105,9 @@ public:
 class MockUtility : public ContainerUtilityInterface
 {
 public:
-
+    MockUtility(std::shared_ptr<Config> config) :
+        ContainerUtilityInterface(config)
+    {}
     MOCK_METHOD0(removeOldContainers, void());
 };
 
@@ -134,7 +136,7 @@ public:
                                      "service-manifest-dir = " + std::string(SERVICE_MANIFEST_DIR_TESTING) + "\n"
                                      "default-service-manifest-dir = " + std::string(DEFAULT_SERVICE_MANIFEST_DIR_TESTING) + "\n";
 
-    const std::string valid_config = "[{\"enableWriteBuffer\": false}]";
+    const std::string valid_config = "[{\"writeBufferEnabled\": false}]";
 
     void SetUp() override
     {
@@ -150,11 +152,11 @@ public:
                                                                   ConfigDependencies());
 
         Glib::RefPtr<Glib::MainContext> mainContext = Glib::MainContext::get_default();
-        testContainerInterface = std::shared_ptr<::testing::NiceMock<TestContainerInterface>> (new ::testing::NiceMock<TestContainerInterface>());
-        factory = std::shared_ptr<SoftwareContainerFactory> (new TestFactory(testContainerInterface));
-        containerUtility = std::shared_ptr<::testing::NiceMock<MockUtility>> (new ::testing::NiceMock<MockUtility>());
+        testContainerInterface = std::shared_ptr<::testing::NiceMock<TestContainerInterface>>(new ::testing::NiceMock<TestContainerInterface>());
+        factory = std::shared_ptr<SoftwareContainerFactory>(new TestFactory(testContainerInterface));
+        containerUtility = std::shared_ptr<::testing::NiceMock<MockUtility>>(new ::testing::NiceMock<MockUtility>(config));
 
-        sca = std::unique_ptr<SoftwareContainerAgent> (new SoftwareContainerAgent(mainContext, config, factory, containerUtility));
+        sca = std::unique_ptr<SoftwareContainerAgent>(new SoftwareContainerAgent(mainContext, config, factory, containerUtility));
 
         ::testing::DefaultValue<bool>::Set(true);
         ::testing::DefaultValue<std::shared_ptr<CommandJob>>::Set(nullptr);

@@ -75,12 +75,12 @@ void Container::init_lxc()
 Container::Container(const std::string id,
                      const std::string &configFile,
                      const std::string &containerRoot,
-                     bool enableWriteBuffer,
+                     bool writeBufferEnabled,
                      int shutdownTimeout) :
     m_configFile(configFile),
     m_id(id),
     m_containerRoot(containerRoot),
-    m_enableWriteBuffer(enableWriteBuffer),
+    m_writeBufferEnabled(writeBufferEnabled),
     m_shutdownTimeout(shutdownTimeout)
 {
     init_lxc();
@@ -110,7 +110,8 @@ bool Container::initialize()
 {
     if (m_state < ContainerState::PREPARED) {
         std::string gatewayDir = gatewaysDir();
-        if (!createDirectory(gatewayDir)) {
+        std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
+        if (!createDirInstance->createDirectory(gatewayDir)) {
             log_error() << "Could not create gateway directory "
                         << gatewayDir << ": " << strerror(errno);
             return false;
@@ -120,7 +121,7 @@ bool Container::initialize()
             log_error() << "Could not create shared mount point for dir: " << gatewayDir;
             return false;
         }
-
+        m_createDirList.push_back(std::move(createDirInstance));
         m_state = ContainerState::PREPARED;
     }
     return true;
@@ -188,10 +189,10 @@ bool Container::create()
     // File system stuff
     m_rootFSPath = buildPath(s_LXCRoot, containerID, "rootfs");
 
-    if (m_enableWriteBuffer) {
-        const std::string rootFSPathLower = m_containerRoot + m_id + "-lower";
-        const std::string rootFSPathUpper = m_containerRoot + m_id + "-upper";
-        const std::string rootFSPathWork  = m_containerRoot + m_id + "-work";
+    if (m_writeBufferEnabled) {
+        const std::string rootFSPathLower = m_containerRoot + "/rootfs-lower";
+        const std::string rootFSPathUpper = m_containerRoot + "/rootfs-upper";
+        const std::string rootFSPathWork  = m_containerRoot + "/rootfs-work";
 
         overlayMount(rootFSPathLower, rootFSPathUpper, rootFSPathWork, m_rootFSPath);
         log_debug() << "Write buffer enabled, lowerdir=" << rootFSPathLower
@@ -547,7 +548,7 @@ bool Container::destroy(unsigned int timeout)
 
 
     // The container can not be destroyed unless the rootfs is unmounted
-    if (m_enableWriteBuffer)
+    if (m_writeBufferEnabled)
     {
         log_debug() << "Unmounting the overlay rootfs";
         if(-1 == umount(m_rootFSPath.c_str())) {
@@ -598,17 +599,19 @@ bool Container::bindMountInContainer(const std::string &pathInHost,
     // Create a file to mount to in gateways
     std::string filePart = baseName(pathInContainer);
     std::string tempPath = buildPath(gatewaysDir(), filePart);
-
+    bool pathIsDirectory = false;
+    std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
     //
     // If the path is a directory, we create the tempPath (which adds a cleanup handler).
     //
     // If it is a file, we touch the file and add a cleanup handler for it.
     //
     if (isDirectory(pathInHost)) {
+        pathIsDirectory = true;
         log_debug() << "Path on host (" << pathInHost << ") is directory, mounting as a directory";
 
         log_debug() << "Creating folder : " << tempPath;
-        if (!createDirectory(tempPath)) {
+        if (!createDirInstance->createDirectory(tempPath)) {
             log_error() << "Could not create folder " << tempPath;
             return false;
         }
@@ -622,12 +625,24 @@ bool Container::bindMountInContainer(const std::string &pathInHost,
                 log_error() << "Could not create file " << tempPath;
                 return false;
             }
-            m_cleanupHandlers.push_back(new FileCleanUpHandler(tempPath));
         }
     }
 
-    return bindMountCore(pathInHost, pathInContainer, tempPath, readOnly);
+    if (!bindMountCore(pathInHost, pathInContainer, tempPath, readOnly)) {
+        // bindMountInContainer operation is not successful. Clean mounted tempPath.
+        MountCleanUpHandler rollback{tempPath};
+        rollback.clean();
+        return false;
+    }
 
+    // bindMountInContainer succeed. Add cleanup for mounted tempPath
+    m_createDirList.push_back(std::move(createDirInstance));
+    if (!pathIsDirectory) {
+        m_cleanupHandlers.emplace_back(new FileCleanUpHandler(tempPath));
+    }
+
+    m_cleanupHandlers.emplace_back(new MountCleanUpHandler(tempPath));
+    return true;
 }
 
 bool Container::bindMountCore(const std::string &pathInHost,
@@ -646,7 +661,11 @@ bool Container::bindMountCore(const std::string &pathInHost,
     }
 
     // Bind mount to /gateways
-    if (!bindMount(pathInHost, tempDirInContainerOnHost, readonly, m_enableWriteBuffer)) {
+    if (!bindMount(pathInHost,
+                   tempDirInContainerOnHost,
+                   m_containerRoot,
+                   readonly,
+                   m_writeBufferEnabled)) {
         log_error() << "Could not bind mount " << pathInHost << " to " << tempDirInContainerOnHost;
         return false;
     }
@@ -853,7 +872,7 @@ std::string Container::gatewaysDirInContainer() const
 
 std::string Container::gatewaysDir() const
 {
-    return buildPath(m_containerRoot, id(), GATEWAYS_PATH);
+    return buildPath(m_containerRoot, GATEWAYS_PATH);
 }
 
 } // namespace softwarecontainer

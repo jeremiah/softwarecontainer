@@ -21,7 +21,6 @@
 #include <filetoolkitwithundo.h>
 #include <recursivecopy.h>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 #include <fstream>
@@ -30,18 +29,18 @@
 
 using namespace softwarecontainer;
 
-class RecursiveCopyTest: public ::testing::Test
+class RecursiveCopyTest: public ::testing::Test, CreateDir
 {
 public:
     RecursiveCopyTest() { }
 
     void SetUp() override
     {
-        srcdir = ft.tempDir("/tmp/sc-recursivecopyTest-XXXXXX");
-        dstdir = ft.tempDir("/tmp/sc-recursivecopyTest-XXXXXX");
+        srcdir = cd.createTempDirectoryFromTemplate("/tmp/sc-recursivecopyTest-XXXXXX");
+        dstdir = cd.createTempDirectoryFromTemplate("/tmp/sc-recursivecopyTest-XXXXXX");
     }
 
-    FileToolkitWithUndo ft;
+    CreateDir cd;
     std::string srcdir;
     std::string dstdir;
 };

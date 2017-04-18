@@ -37,83 +37,29 @@ FileToolkitWithUndo::~FileToolkitWithUndo()
     // Clean up all created directories, files, and mount points
 
     while (!m_cleanupHandlers.empty()) {
-        CleanUpHandler *c = m_cleanupHandlers.back();
+        std::unique_ptr<CleanUpHandler> c = std::move(m_cleanupHandlers.back());
         m_cleanupHandlers.pop_back();
 
         if (!c->clean()) {
             success = false;
         }
-
-        delete c;
     }
 
     if(!success) {
-        log_error() << "One or more cleanup handlers returned error status, please check the log";
+        log_warning() << "One or more cleanup handlers returned error status, please check the log";
     }
-}
-
-bool FileToolkitWithUndo::createParentDirectory(const std::string &path)
-{
-    log_debug() << "Creating parent directories for " << path;
-    std::string parent = parentPath(path);
-
-    if (!createDirectory(parent)) {
-        log_error() << "Could not create directory " << parent;
-        return false;
-    }
-
-    return true;
-}
-
-bool FileToolkitWithUndo::createDirectory(const std::string &path)
-{
-    log_debug() << "createDirectory(" << path << ") called";
-    if (isDirectory(path)) {
-        return true;
-    }
-
-    if(!createParentDirectory(path)) {
-        log_error() << "Couldn't create parent directory for " << path;
-        return false;
-    }
-
-    if (mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
-        log_error() << "Could not create directory " << path << ": " << strerror(errno);
-        return false;
-    }
-
-    if (!pathInList(path)) {
-        m_cleanupHandlers.push_back(new DirectoryCleanUpHandler(path));
-    }
-    log_debug() << "Created directory " << path;
-
-    return true;
-}
-
-std::string FileToolkitWithUndo::tempDir(std::string templ)
-{
-    char *dir = const_cast<char*>(templ.c_str());
-    dir = mkdtemp(dir);
-    if (dir == nullptr) {
-        log_warning() << "Failed to create buffered Directory: " << strerror(errno);
-        return nullptr;
-    }
-
-    if (!pathInList(templ)) {
-        m_cleanupHandlers.push_back(new DirectoryCleanUpHandler(templ));
-    }
-
-    return std::string(dir);
 }
 
 bool FileToolkitWithUndo::bindMount(const std::string &src,
                                     const std::string &dst,
+                                    const std::string &tmpContainerRoot,
                                     bool readOnly,
-                                    bool enableWriteBuffer)
+                                    bool writeBufferEnabled)
 {
     unsigned long flags =  0;
     std::string fstype;
     int mountRes;
+    std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
 
     if (!existsInFileSystem(src)) {
         log_error() << src << " does not exist on the host, can not bindMount";
@@ -127,15 +73,24 @@ bool FileToolkitWithUndo::bindMount(const std::string &src,
 
     log_debug() << "Bind-mounting " << src << " in " << dst << ", flags: " << flags;
 
-    if(enableWriteBuffer && isDirectory(src)) {
-        std::string upperDir = tempDir("/tmp/sc-bindmount-upper-XXXXXX");
-        std::string workDir = tempDir("/tmp/sc-bindmount-work-XXXXXX");
+    if(writeBufferEnabled && isDirectory(src)) {
+        std::string upperDir , workDir;
+
+        // In case the tmpContainerRoot is set to nothing we need to create a
+        // good bindmount directory.
+        if (tmpContainerRoot == "") {
+            upperDir = createDirInstance->createTempDirectoryFromTemplate("/tmp/sc-bindmount-upper-XXXXXX");
+            workDir = createDirInstance->createTempDirectoryFromTemplate("/tmp/sc-bindmount-work-XXXXXX");
+        } else {
+            upperDir = createDirInstance->createTempDirectoryFromTemplate(tmpContainerRoot + "/bindmount-upper-XXXXXX");
+            workDir = createDirInstance->createTempDirectoryFromTemplate(tmpContainerRoot + "/bindmount-work-XXXXXX");
+        }
         fstype.assign("overlay");
 
         std::ostringstream os;
         os << "lowerdir=" << src << ",upperdir=" << upperDir << ",workdir=" << workDir;
 
-        log_debug() << "enableWriteBuffer, config: " << os.str();
+        log_debug() << "writeBufferEnabled, config: " << os.str();
 
         mountRes = mount("overlay", dst.c_str(), fstype.c_str(), flags, os.str().c_str());
         log_debug() << "mountRes: " << mountRes;
@@ -147,14 +102,13 @@ bool FileToolkitWithUndo::bindMount(const std::string &src,
 
     if (mountRes == 0) {
         log_verbose() << "Bind-mounted folder " << src << " in " << dst;
-        m_cleanupHandlers.push_back(new MountCleanUpHandler(dst));
     } else {
         log_error() << "Could not mount into container: src=" << src
                     << " , dst=" << dst << " err=" << strerror(errno);
         return false;
     }
 
-    if (readOnly && !enableWriteBuffer) {
+    if (readOnly && !writeBufferEnabled) {
         const void *data = nullptr;
 
         flags = MS_REMOUNT | MS_RDONLY | MS_BIND;
@@ -169,6 +123,7 @@ bool FileToolkitWithUndo::bindMount(const std::string &src,
             return false;
         }
     }
+    m_createDirList.push_back(std::move(createDirInstance));
     return true;
 }
 
@@ -179,11 +134,12 @@ bool FileToolkitWithUndo::overlayMount(const std::string &lower,
 {
     std::string fstype = "overlay";
     unsigned long flags = 0;
+    std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
 
-    if (!createDirectory(lower)
-        || !createDirectory(upper)
-        || !createDirectory(work)
-        || !createDirectory(dst))
+    if (!createDirInstance->createDirectory(lower)
+        || !createDirInstance->createDirectory(upper)
+        || !createDirInstance->createDirectory(work)
+        || !createDirInstance->createDirectory(dst))
     {
         log_error() << "Failed to create lower/upper/work directory for overlayMount. lowerdir=" <<
                        lower << ", upperdir=" << upper << ", workdir=" << work;
@@ -198,14 +154,8 @@ bool FileToolkitWithUndo::overlayMount(const std::string &lower,
 
     if (mountRes == 0) {
         log_verbose() << "overlayMounted folder " << lower << " in " << dst;
-        m_cleanupHandlers.push_back(new MountCleanUpHandler(dst));
-        if (!pathInList(upper)) {
-            m_cleanupHandlers.push_back(new DirectoryCleanUpHandler(upper));
-        }
-        m_cleanupHandlers.push_back(new OverlaySyncCleanupHandler(upper, lower));
-        if (!pathInList(work)) {
-            m_cleanupHandlers.push_back(new DirectoryCleanUpHandler(work));
-        }
+        m_cleanupHandlers.emplace_back(new MountCleanUpHandler(dst));
+        m_cleanupHandlers.emplace_back(new OverlaySyncCleanupHandler(upper, lower));
     } else {
         log_error() << "Could not mount into container: upper=" << upper
                     << ",lower=" << lower
@@ -214,6 +164,7 @@ bool FileToolkitWithUndo::overlayMount(const std::string &lower,
         return false;
     }
 
+    m_createDirList.push_back(std::move(createDirInstance));
     return true;
 }
 
@@ -221,6 +172,35 @@ bool FileToolkitWithUndo::syncOverlayMount(const std::string &lower,
                                            const std::string &upper)
 {
     return RecursiveCopy::getInstance().copy(upper, lower);
+}
+
+bool FileToolkitWithUndo::tmpfsMount(const std::string dst, const int maxSize)
+{
+    std::string fstype = "tmpfs";
+    unsigned long flags = 0;
+    std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
+
+    if (!createDirInstance->createDirectory(dst)) {
+        log_error() << "Failed to create " << dst << " directory for tmpfs mount";
+        return false;
+    }
+
+    std::string mountoptions = logging::StringBuilder() << "size=" << maxSize;
+
+    bool directoryIsEmpty = isDirectoryEmpty(dst);
+
+    int mountRes = mount("tmpfs", dst.c_str(), fstype.c_str(), flags, mountoptions.c_str());
+
+    if (0 == mountRes) {
+        log_verbose() << "tmpfs mounted in " << dst;
+        m_cleanupHandlers.emplace_back(new MountCleanUpHandler(dst));
+    } else {
+        log_error() << "Could not mount tmpfs into directory: " << dst << " size=" << maxSize;
+        return false;
+    }
+
+    m_createDirList.push_back(std::move(createDirInstance));
+    return true;
 }
 
 bool FileToolkitWithUndo::createSharedMountPoint(const std::string &path)
@@ -243,7 +223,7 @@ bool FileToolkitWithUndo::createSharedMountPoint(const std::string &path)
         return false;
     }
 
-    m_cleanupHandlers.push_back(new MountCleanUpHandler(path));
+    m_cleanupHandlers.emplace_back(new MountCleanUpHandler(path));
     log_debug() << "Created shared mount point at " << path;
 
     return true;
@@ -251,7 +231,8 @@ bool FileToolkitWithUndo::createSharedMountPoint(const std::string &path)
 
 bool FileToolkitWithUndo::pathInList(const std::string path)
 {
-    for (auto element : m_cleanupHandlers) {
+
+    for (auto &element : m_cleanupHandlers) {
         if (element->queryName() == path) {
             return true;
         }
@@ -266,7 +247,7 @@ bool FileToolkitWithUndo::writeToFile(const std::string &path, const std::string
     }
 
     if (!pathInList(path)) {
-        m_cleanupHandlers.push_back(new FileCleanUpHandler(path));
+        m_cleanupHandlers.emplace_back(new FileCleanUpHandler(path));
     }
     log_debug() << "Successfully wrote to " << path;
     return true;
@@ -275,7 +256,7 @@ bool FileToolkitWithUndo::writeToFile(const std::string &path, const std::string
 void FileToolkitWithUndo::markFileForDeletion(const std::string &path)
 {
     if (!pathInList(path)) {
-        m_cleanupHandlers.push_back(new FileCleanUpHandler(path));
+        m_cleanupHandlers.emplace_back(new FileCleanUpHandler(path));
     }
 }
 

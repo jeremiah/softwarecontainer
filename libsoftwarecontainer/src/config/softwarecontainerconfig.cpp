@@ -51,7 +51,17 @@ SoftwareContainerConfig::SoftwareContainerConfig(
 
 void SoftwareContainerConfig::setEnableWriteBuffer(bool enabledFlag)
 {
-    m_enableWriteBuffer = enabledFlag;
+    m_writeBufferEnabled = enabledFlag;
+}
+
+void SoftwareContainerConfig::setEnableTemporaryFileSystemWriteBuffers(bool enabled)
+{
+    m_temporaryFileSystemWriteBufferEnableds = enabled;
+}
+
+void SoftwareContainerConfig::setTemporaryFileSystemSize(unsigned int size)
+{
+    m_temporaryFileSystemSize = size;
 }
 
 std::string SoftwareContainerConfig::containerConfigPath() const
@@ -69,9 +79,19 @@ unsigned int SoftwareContainerConfig::containerShutdownTimeout() const
     return m_containerShutdownTimeout;
 }
 
-bool SoftwareContainerConfig::enableWriteBuffer() const
+bool SoftwareContainerConfig::writeBufferEnabled() const
 {
-    return m_enableWriteBuffer;
+    return m_writeBufferEnabled;
+}
+
+bool SoftwareContainerConfig::temporaryFileSystemWriteBufferEnableds() const
+{
+    return m_temporaryFileSystemWriteBufferEnableds;
+}
+
+unsigned int SoftwareContainerConfig::temporaryFileSystemSize() const
+{
+    return m_temporaryFileSystemSize;
 }
 
 #ifdef ENABLE_NETWORKGATEWAY

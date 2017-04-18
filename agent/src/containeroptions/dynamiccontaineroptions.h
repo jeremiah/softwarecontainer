@@ -41,11 +41,35 @@ public:
      * Setter and getter for the dynamic value on whether or not to enable
      * buffered write to disk for the container.
      */
-    void setEnableWriteBuffer(bool enabled);
-    bool enableWriteBuffer() const;
+    void setWriteBufferEnabled(bool enabled);
+    bool writeBufferEnabled() const;
+
+    /**
+     * @brief Setter for the temporaryFileSystemWriteBufferEnableds variable used to tell the container
+     * if it shall mount a separate tmpfs on top of the temp directory
+     */
+    void setTemporaryFileSystemWriteBufferEnabled(bool enabled);
+    /**
+     * @brief Getter for the temporaryFileSystemWriteBufferEnableds variable
+     */
+    bool temporaryFileSystemWriteBufferEnabled() const;
+
+    /**
+     * @brief Setter for the temporaryFileSystemSize which is used to tell the system the size of the
+     * tmpfs being mounted on the temp directory.
+     * @param size in bytes of the filesystem
+     */
+    void setTemporaryFileSystemSize(unsigned int size);
+    /**
+     * @brief Getter for the temporaryFileSystemSize variable.
+     * @return the size
+     */
+    unsigned int temporaryFileSystemSize() const;
 
 private:
-    bool m_enableWriteBuffer = false;
+    bool m_writeBufferEnabled = false;
+    bool m_temporaryFileSystemWriteBufferEnabled = false;
+    unsigned int m_temporaryFileSystemSize;
 };
 
 } // namespace softwarecontainer

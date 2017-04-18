@@ -19,7 +19,8 @@
 
 #pragma once
 
-#include "cleanuphandler.h"
+#include "mountcleanuphandler.h"
+#include "createdir.h"
 #include "softwarecontainer-common.h"
 
 namespace softwarecontainer {
@@ -36,24 +37,24 @@ public:
      * @param src Path to mount from
      * @param dst Path to mount to
      * @param readOnly Make the bind mount destination read only
-     * @param enableWriteBuffer Enable write buffers on the bind mount.
+     * @param writeBufferEnabled Enable write buffers on the bind mount.
      * @return true on success, false on failure
      */
     bool bindMount(const std::string &src,
                    const std::string &dst,
+                   const std::string &tmpContainerRoot,
                    bool readOnly,
-                   bool enableWriteBuffer=false);
-
+                   bool writeBufferEnabled=false);
 
     /**
-     * @brief tempDir Creates a temporary directory at templatePath.
-     * @warning The temporary path will be destroyed when the instance of FileToolkitWithUndo
-     *  is destroyed.
-     * @param templ a template Path used to create the path of the temporary directory, including
-     *  XXXXXX which will be replaced with a unique ID for the temporary directory
-     * @return A string path pointing to the newly creted temporary directory.
+     * @brief tmpfsMount Mount a tmpfs in the dst path and limit size of the
+     *  tmpfs to maxSize
+     * @param dst The destination to mount a tmpfs on
+     * @param maxSize The max size of the tmpfs being mounted
+     * @return
      */
-    std::string tempDir(std::string templatePath);
+    bool tmpfsMount(const std::string dst, const int maxSize);
+
 protected:
     /*
      * @brief Writes to a file (and optionally create it)
@@ -102,16 +103,6 @@ protected:
     bool createSharedMountPoint(const std::string &path);
 
     /**
-     * @brief createDirectory Create a directory, and if successful append it
-     *  to a list of dirs to be deleted in the dtor. Since nestled dirs will
-     *  need to be deleted in reverse order to creation insert to the beginning
-     *  of the list.
-     * @param path Path of directory to be created
-     * @return true on success, false on failure
-     */
-    bool createDirectory(const std::string &path);
-
-    /**
      * @brief checks whether given path is already added to clean up handlers or not
      *
      * This function will be called only before adding new CleanUpHandler for FileCleanUpHandler
@@ -127,14 +118,13 @@ protected:
      * @brief m_cleanupHandlers A vector of cleanupHandlers added during the lifetime of the
      *  FileToolKitWithUndo that will be run from the destructor.
      */
-    std::vector<CleanUpHandler *> m_cleanupHandlers;
-private :
+    std::vector<std::unique_ptr<CleanUpHandler>> m_cleanupHandlers;
+
     /**
-     * @brief createParentDirectory Recursively tries to create the directory pointed to by path.
-     * @param path The directory path to be created.
-     * @return true on success, false on failure
+     * @brief m_createDirList A vector of CreateDir classes. This class handles directory cleaning
+     * operations when either interfered errors or when its destructor runs.
      */
-    bool createParentDirectory(const std::string &path);
+    std::vector<std::unique_ptr<CreateDir>> m_createDirList;
 };
 
 } // namespace softwarecontainer

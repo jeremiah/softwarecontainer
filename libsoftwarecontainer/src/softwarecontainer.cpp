@@ -61,7 +61,16 @@ SoftwareContainer::SoftwareContainer(const ContainerID id,
     m_config(std::move(config)),
     m_previouslyConfigured(false)
 {
-    checkWorkspace();
+    m_containerRoot = buildPath(m_config->sharedMountsDir(), "SC-" + std::to_string(id));
+    m_tmpfsSize = 100485760;
+    checkContainerRoot(m_containerRoot);
+    if (m_config->writeBufferEnabled()) {
+        if (m_config->temporaryFileSystemWriteBufferEnableds()) {
+            m_tmpfsSize = m_config->temporaryFileSystemSize();
+        }
+        tmpfsMount(m_containerRoot, m_tmpfsSize);
+    }
+
 #ifdef ENABLE_NETWORKGATEWAY
     checkNetworkSettings();
 #endif // ENABLE_NETWORKGATEWAY
@@ -69,8 +78,8 @@ SoftwareContainer::SoftwareContainer(const ContainerID id,
     m_container = std::shared_ptr<ContainerAbstractInterface>(
         new Container("SC-" + std::to_string(id),
                       m_config->containerConfigPath(),
-                      m_config->sharedMountsDir(),
-                      m_config->enableWriteBuffer(),
+                      m_containerRoot,
+                      m_config->writeBufferEnabled(),
                       m_config->containerShutdownTimeout()));
 
     if(!init()) {
@@ -213,7 +222,7 @@ bool SoftwareContainer::configureGateways(const GatewayConfiguration &gwConfig)
 
         json_t *config = gwConfig.config(gatewayId);
         if (config != nullptr) {
-            log_debug() << "Configuring gateway: " << gatewayId;
+            log_debug() << "Configuring gateway: \"" << gatewayId << "\"";
             log_debug() << json_dumps(config, JSON_INDENT(4));
             try {
                 if (!gateway->setConfig(config)) {
@@ -243,6 +252,8 @@ bool SoftwareContainer::activateGateways()
 
         try {
             if (gateway->isConfigured()) {
+                log_debug() << "Activating gateway: \"" << gatewayId << "\"";
+
                 if (!gateway->activate()) {
                     log_error() << "Failed to activate gateway \"" << gatewayId << "\"";
                     return false;
@@ -349,6 +360,7 @@ bool SoftwareContainer::shutdownGateways()
     bool status = true;
     for (auto &gateway : m_gateways) {
         if (gateway->isActivated()) {
+            log_debug() << "Tearing down gateway: \"" << gateway->id() << "\"";
             if (!gateway->teardown()) {
                 log_warning() << "Could not tear down gateway cleanly: " << gateway->id();
                 status = false;
@@ -435,16 +447,21 @@ bool SoftwareContainer::previouslyConfigured()
     return m_previouslyConfigured;
 }
 
-void SoftwareContainer::checkWorkspace()
+void SoftwareContainer::checkContainerRoot(std::string rootDir)
 {
-    const std::string rootDir = m_config->sharedMountsDir();
     if (!isDirectory(rootDir)) {
         log_debug() << "Container root " << rootDir << " does not exist, trying to create";
-        if(!createDirectory(rootDir)) {
+        std::unique_ptr<CreateDir> createDirInstance = std::unique_ptr<CreateDir>(new CreateDir());
+        if(!createDirInstance->createDirectory(rootDir)) {
             std::string message = "Failed to create container root directory";
             log_error() << message;
             throw SoftwareContainerError(message);
         }
+
+        m_createDirList.push_back(std::move(createDirInstance));
+    }
+    if (!isDirectoryEmpty(rootDir)) {
+        log_warning() << "Container Root " << rootDir << " is not empty.";
     }
 }
 
